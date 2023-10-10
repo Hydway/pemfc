@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
@@ -13,6 +12,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from model.mymodel import TransformerModel
+from utils import data_clean
 
 # 设定设备为GPU（如果可用）
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,6 +29,10 @@ pred_data  = pd.read_csv('./data/FC2_Ageing_part2.csv', encoding='unicode_escape
 # print("raw train data: ", train_data.head())
 # print("raw pred data: ", pred_data.head())
 # print("len raw data:", len(train_data))
+
+# 异常值处理
+train_data = data_clean(train_data)
+pred_data = data_clean(pred_data)
 
 # train数据预处理
 train_quasi_features = train_data.drop(train_data.columns[[0, 6, -1]], axis=1).values
