@@ -1,57 +1,73 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def data_clean(x: pd.DataFrame) -> pd.DataFrame:
-    """
-    处理异常数据
-    :param x: raw数据，包含异常值
-    :return: 清洗好的数据，异常值被替换
-    """
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
-    # Data condense for every 9 min
-    data_c = [x.iloc[0]]
-    last_time = data_c[0]['Time']
-    for _, row in x.iterrows():
-        if row['Time'] - last_time >= 0.1:
-            data_c.append(row)
-            last_time = row['Time']
 
-    data_c = pd.DataFrame(data_c)
+def correct_abnormal_values_for_feature(data, feature, segment_size=800, threshold_pct=2, window_size=60):
+    corrected_data = data.copy()
+    num_segments = len(data) // segment_size
 
-    # Selecting Features
-    variables = data_c[['Time', 'TinH2', 'TinAIR', 'ToutH2', 'TinWAT', 'I', 'PoutAIR', 'HrAIRFC', 'ToutAIR']]
+    for i in range(num_segments):
+        start_idx = i * segment_size
+        end_idx = start_idx + segment_size
+        segment_mean = data[feature][start_idx:end_idx].mean()
 
-    # Moving average filter
-    windowSize = 10
-    output = variables.copy()
-    for column in variables.columns:
-        output[column] = variables[column].rolling(window=windowSize).mean()
+        # Identify abnormal values in the segment
+        upper_threshold = segment_mean * (1 + threshold_pct / 100)
+        lower_threshold = segment_mean * (1 - threshold_pct / 100)
+        abnormal_indices = corrected_data.loc[start_idx:end_idx][(corrected_data[feature] > upper_threshold) |
+                                                                 (corrected_data[feature] < lower_threshold)].index
 
-    return output
+        # Correct the abnormal values using moving average
+        for idx in abnormal_indices:
+            if idx > window_size:
+                moving_avg = corrected_data[feature][idx - window_size:idx].mean()
+                corrected_data.at[idx, feature] = moving_avg
 
-# Load data
-A1 = pd.read_csv('D:/E/Sheffield/Spring/ITP/data/FC2_Ageing_part1.csv')
-A2 = pd.read_csv('D:/E/Sheffield/Spring/ITP/data/FC2_Ageing_part2.csv')
-data = pd.concat([A1, A2], ignore_index=True)
+    return corrected_data
 
-cleaned_data = data_clean(data)
+def data_clean(data, process_data=True):
 
-# Plotting
-plt.figure()
-plt.plot(data['Time'], data['Utot'], 'b', label='original data')
-plt.plot(cleaned_data['Time'], cleaned_data['Utot'], 'r', label='cleaned data')
-plt.xlabel('Time(h)')
-plt.ylabel('Stack Voltage(V)')
-plt.title('quasi-Dynamic Dataset after Cleaning')
-plt.legend()
-plt.show()
+    if not process_data:
+        return data
 
-# Plotting after Moving Average Filter (MAF)
-plt.figure()
-plt.plot(cleaned_data['Time'], cleaned_data['I'], 'b', label='original data')
-plt.plot(cleaned_data['Time'], cleaned_data['I'], 'r', linewidth=1.5, label='MAF data')
-plt.xlabel('Time(h)')
-plt.ylabel('Stack Voltage(V)')
-plt.title('Quasi-Dynamic MAF after Cleaning')
-plt.legend()
-plt.show()
+    corrected_data = data.copy()
+
+    for feature in data.columns:
+        corrected_data = correct_abnormal_values_for_feature(corrected_data, feature)
+
+    return corrected_data
+
+
+def plot_corrected_data(process_data=True):
+    # Load the data
+    A1 = pd.read_csv('/content/FC2_Ageing_part1.csv', encoding='ISO-8859-1')
+    A2 = pd.read_csv('/content/FC2_Ageing_part2.csv', encoding='ISO-8859-1')
+    data = pd.concat([A1, A2], ignore_index=True)
+
+    if not process_data:
+        return data
+
+    corrected_data = data.copy()
+
+    for feature in data.columns:
+        corrected_data = correct_abnormal_values_for_feature(corrected_data, feature)
+
+    # Plotting for the 'Utot (V)' column as an example
+    plt.figure(figsize=(15, 6))
+    plt.plot(data['Time (h)'], data['Utot (V)'], 'b', label='Original Utot (V)')
+    plt.plot(corrected_data['Time (h)'], corrected_data['Utot (V)'], 'r', label='Corrected Utot (V)')
+    plt.xlabel('Time(h)')
+    plt.ylabel('Stack Voltage(V)')
+    plt.title('Utot (V) Correction using Segment-Based Dynamic Threshold (Optimized)')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    return corrected_data
+
+
+# Example Usage
+# processed_data = plot_corrected_data(process_data=True)
