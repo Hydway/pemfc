@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import Dropout
 import torch.nn.functional as F
+from iTransformer import iTransformer
 
 
 
@@ -59,7 +60,7 @@ class Stem(nn.Module):
         )
 
     def forward(self, x):
-        input = x
+        tensor_in = x
         B, H, W = x.size()
         x = x.unsqueeze(1)
         x = self.proj(x)
@@ -67,7 +68,7 @@ class Stem(nn.Module):
         x = x.view(B, H, 1, W)
         x = self.pointwise(x)
         x = x.squeeze()
-        return x + input
+        return x + tensor_in
 
 
 class PositionalEncoding(nn.Module):
@@ -89,6 +90,35 @@ class PositionalEncoding(nn.Module):
         return x + self.pos_encoding[:, :x.size(1), :].to(x.device)
 
 
+# 可学习的绝对位置编码
+class AbsolutePositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=1000):
+        super(AbsolutePositionalEncoding, self).__init__()
+        self.pos_encoding = nn.Embedding(max_len, d_model)
+
+    def forward(self, x):
+        positions = torch.arange(x.size(1)).unsqueeze(0).to(x.device)
+        return x + self.pos_encoding(positions)
+
+
+# 可学习的相对位置编码
+class RelativePositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=500):
+        super(RelativePositionalEncoding, self).__init__()
+        self.d_model = d_model
+        self.embed = nn.Embedding(2*max_len+1, d_model)
+
+    def forward(self, x):
+        batch_size, seq_len = x.size(0), x.size(1)
+        col_indices = torch.arange(seq_len, device=x.device).unsqueeze(0).repeat(seq_len, 1)
+        row_indices = torch.arange(seq_len, device=x.device).unsqueeze(1).repeat(1, seq_len)
+        distance = col_indices - row_indices
+        distance = distance + seq_len
+        embeddings = self.embed(distance)
+        return x + embeddings
+
+
+
 class cpe_pos_embb(nn.Module):
     def __init__(self, d_model):
         super(cpe_pos_embb, self).__init__()
@@ -106,8 +136,13 @@ class TransformerBlock(nn.Module):
     def __init__(self, d_model, head_num, drop=0., mlp_ratio=4, win_size=100):
         super(TransformerBlock, self).__init__()
         self.ori_d = 8
+
+        # 位置编码
         # self.pos_embed = cpe_pos_embb(d_model)
-        self.pos_embed = PositionalEncoding(d_model)
+        # self.pos_embed = PositionalEncoding(d_model)
+        # self.pos_embed = AbsolutePositionalEncoding(d_model)
+        self.pos_embed = RelativePositionalEncoding(d_model)
+
         self.att = nn.MultiheadAttention(embed_dim=d_model, num_heads=head_num)
         self.b_norm = nn.BatchNorm1d(self.ori_d)
         self.nn = nn.Linear(d_model, self.ori_d)
@@ -156,10 +191,16 @@ class TransformerModel(nn.Module):
         self.b_norm2 = nn.BatchNorm1d(win_size)
         self.b_norm3 = nn.BatchNorm1d(win_size)
         # self.positional_enc = PositionalEncoding(d_model)
-        self.block1 = TransformerBlock(d_model=d_model, head_num=8, drop=drop, win_size=win_size)
-        self.block2 = TransformerBlock(d_model=d_model, head_num=8, drop=drop, win_size=win_size)
-        self.block3 = TransformerBlock(d_model=d_model, head_num=4, drop=drop, win_size=win_size)
-        self.block4 = TransformerBlock(d_model=d_model, head_num=4, drop=drop, win_size=win_size)
+        self.iTransformerBlock = iTransformer(
+            # num_variates = ,
+            # lookback_len = ,
+            # depth = ,
+            # dim = ,
+        )
+        self.block1 = TransformerBlock(d_model=d_model, head_num=16, drop=drop, win_size=win_size)
+        self.block2 = TransformerBlock(d_model=d_model, head_num=16, drop=drop, win_size=win_size)
+        self.block3 = TransformerBlock(d_model=d_model, head_num=16, drop=drop, win_size=win_size)
+        self.block4 = TransformerBlock(d_model=d_model, head_num=16, drop=drop, win_size=win_size)
         self.block5 = TransformerBlock(d_model=d_model, head_num=8, drop=drop, win_size=win_size)
         self.block6 = TransformerBlock(d_model=d_model, head_num=8, drop=drop, win_size=win_size)
         self.block7 = TransformerBlock(d_model=d_model, head_num=8, drop=drop, win_size=win_size)
@@ -167,8 +208,8 @@ class TransformerModel(nn.Module):
         self.block9 = TransformerBlock(d_model=d_model, head_num=16, drop=drop, win_size=win_size)
         self.block10 = TransformerBlock(d_model=d_model, head_num=16, drop=drop, win_size=win_size)
         self.fc_out1 = nn.Linear(d_model, int(d_model / 2))
-        self.fc_out2 = nn.Linear(input_dim, 1)
-        self.avg_pool = nn.AdaptiveAvgPool1d(input_dim)
+        self.fc_out2 = nn.Linear(int(d_model / 4), 1)
+        self.avg_pool = nn.AdaptiveAvgPool1d(int(d_model / 4))
         self.act1 = nn.Tanh()
         self.act2 = nn.Tanh()
         self.drop = nn.Dropout(drop)
@@ -177,10 +218,10 @@ class TransformerModel(nn.Module):
 
         x = self.stem1(x)
         x = self.fc_in1(x)
-        x = self.b_norm1(x)
+        # x = self.b_norm1(x)
         # x = F.leaky_relu(x)
         x = self.block1(x)
-        x = self.block2(x)
+        # x = self.block2(x)
         # x = self.block3(x)
         # x = self.block4(x)
 

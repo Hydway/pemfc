@@ -38,11 +38,11 @@ seed_everything(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
-window_size = 100
+window_size = 200
 BATCH_SIZE  = 256
 d_attn = 128
 Drop = 0.
-num_epochs  = 50
+num_epochs  = 200
 lr = 1e-4
 
 # 读取train / pred原始数据
