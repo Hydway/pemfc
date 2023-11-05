@@ -14,7 +14,6 @@ import random
 import matplotlib
 import matplotlib.pyplot as plt
 
-from model.mymodel import TransformerModel
 from utils import data_clean
 
 import warnings
