@@ -9,7 +9,7 @@ from beartype.typing import Optional, Union, Tuple, Callable
 from einops import rearrange, reduce, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
-from iTransformer.attend import Attend
+from attend import Attend
 
 # helper functions
 
