@@ -9,7 +9,7 @@ from beartype.typing import Optional, Union, Tuple, Callable
 from einops import rearrange, reduce, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
-from attend import Attend
+from .attend import Attend
 
 # helper functions
 
@@ -58,20 +58,37 @@ class RevIN(Module):
 class Attention(Module):
     def __init__(
         self,
+        num_variates,
         dim,
         dim_head = 32,
         heads = 4,
         dropout = 0.,
-        flash = True
+        flash = True,
+        sr_ratio=2,
     ):
         super().__init__()
         self.scale = dim_head ** -0.5
         dim_inner = dim_head * heads
 
-        self.to_qkv = nn.Sequential(
+        self.num_heads = heads
+
+        self.sr_ratio = sr_ratio
+        self.sr_k = nn.Conv1d(num_variates, num_variates, kernel_size=2, stride=2)
+        self.sr_v = nn.Conv1d(num_variates, num_variates, kernel_size=2, stride=2)
+        self.norm1 = nn.LayerNorm(dim)
+        self.act = nn.GELU()
+
+        self.kv = nn.Linear(dim, dim * 2, bias=False)
+
+        self.to_qkv_1 = nn.Sequential(
             nn.Linear(dim, dim_inner * 3, bias = False),
-            Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = heads)
+            # Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = heads)
         )
+
+        self.to_qkv_2 = nn.Sequential(
+            Rearrange('b n (qkv h d) -> qkv b h n d', qkv=3, h=heads)
+        )
+
 
         self.to_v_gates = nn.Sequential(
             nn.Linear(dim, dim_inner, bias = False),
@@ -88,9 +105,27 @@ class Attention(Module):
         )
 
     def forward(self, x):
-        q, k, v = self.to_qkv(x)
+        B, C, N = x.shape
+        x_ = self.to_qkv_1(x)
+
+        # print("x_:", x_.shape)
+
+        q, k, v = self.to_qkv_2(x_)
+
+        # kv = self.kv(x).reshape(B, -1, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        # k, v = kv[0], kv[1]
+        k = self.sr_k(torch.reshape(k, (B, C, -1)))
+        v = self.sr_v(torch.reshape(v, (B, C, -1)))
+        k = k.reshape(B, C, self.num_heads, -1).permute(0, 2, 1, 3)
+        v = v.reshape(B, C, self.num_heads, -1).permute(0, 2, 1, 3)
+
+        # print("q.size:", q.shape)
+        # print("k.size:", k.shape)
+        # print("v.size:", v.shape)
 
         out = self.attend(q, k, v)
+
+        # print("out size:", out.shape)
 
         out = out * self.to_v_gates(x)
         return self.to_out(out)
@@ -147,7 +182,7 @@ class iTransformer(Module):
         self.layers = ModuleList([])
         for _ in range(depth):
             self.layers.append(ModuleList([
-                Attention(dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, flash = flash_attn),
+                Attention(num_variates+num_mem_tokens, dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, flash = flash_attn),
                 nn.LayerNorm(dim),
                 FeedForward(dim, mult = ff_mult, dropout = ff_dropout),
                 nn.LayerNorm(dim)

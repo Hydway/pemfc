@@ -41,9 +41,10 @@ print(device)
 
 window_size = 200
 BATCH_SIZE  = 256
-d_attn = 128
+head = 8
+d_attn = window_size * head
 Drop = 0.
-num_epochs  = 200
+num_epochs  = 30
 lr = 1e-4
 
 # 读取train / pred原始数据
@@ -60,13 +61,13 @@ pred_data  = data_clean(pred_data, process_data=False)
 
 # train数据预处理
 # train_quasi_features = train_data.drop(train_data.columns[[0, 6, -1]], axis=1).values
-train_quasi_features = train_data.drop(train_data.columns[[0, -1]], axis=1).values
+train_quasi_features = train_data.drop(train_data.columns[[0, ]], axis=1).values
 train_quasi_vol = train_data.iloc[:, [-1]].values
 # print("dropped data: ", train_quasi_features[0])
 # print("len dropped data:", len(train_quasi_features[0]))
 
 # pred数据预处理
-pred_quasi_features = pred_data.drop(pred_data.columns[[0, -1, ]], axis=1).values
+pred_quasi_features = pred_data.drop(pred_data.columns[[0, ]], axis=1).values
 # pred_quasi_features = pred_data.drop(pred_data.columns[[0, 6, ]], axis=1).values
 pred_quasi_vol = pred_data.iloc[:, [-1]].values
 # print("dropped data: ", pred_quasi_features[0])
@@ -79,7 +80,7 @@ train_quasi_features = scaler_features.fit_transform(train_quasi_features)
 pred_quasi_features = scaler_features.transform(pred_quasi_features)
 
 # 归一化电压数据
-scaler_voltage = QuantileTransformer()
+scaler_voltage = StandardScaler()
 train_quasi_vol = scaler_voltage.fit_transform(train_quasi_vol)
 
 # pred_quasi_vol = scaler_voltage.fit_transform(pred_quasi_vol)
@@ -129,11 +130,13 @@ model = iTransformer(
     lookback_len=window_size,
     dim=d_attn,
     depth=6,
-    heads=8,
-    dim_head=64,
+    heads=head,
+    dim_head=d_attn,
     pred_length=(1,),
     num_tokens_per_variate=1,
-    use_reversible_instance_norm=True
+    use_reversible_instance_norm=True,
+    flash_attn = False,
+    attn_dropout = Drop,
 ).to(device)
 
 criterion = nn.MSELoss()
@@ -148,7 +151,7 @@ for epoch in range(num_epochs):
     for X_batch, y_batch in train_loader:
         optimizer.zero_grad()
         preds = model(X_batch)
-        outputs = preds[1]  # Fetch the output for the prediction length 1
+        outputs = preds[1][..., -1]   # Fetch the output for the prediction length 1
         loss = criterion(outputs, y_batch)
         loss.backward()
         optimizer.step()
@@ -160,7 +163,7 @@ for epoch in range(num_epochs):
     with torch.no_grad():
         for X_batch, y_batch in test_loader:
             preds = model(X_batch)
-            outputs = preds[1]  # Fetch the output for the prediction length 1
+            outputs = preds[1][..., -1]   # Fetch the output for the prediction length 1
             loss = criterion(outputs, y_batch)
             running_loss += loss.item()
     test_losses.append(running_loss/len(test_loader))
@@ -196,7 +199,7 @@ def predict(X_pred_seq):
 
             # 预测
             preds = model(batch)
-            batch_pred = preds[1]  # Fetch the output for the prediction length 1
+            batch_pred = preds[1][..., -1]  # Fetch the output for the prediction length 1
 
             # 将预测结果移到 CPU 上，并转化为 numpy 数组
             y_pred_1000.append(batch_pred.cpu().numpy())
@@ -209,8 +212,18 @@ def predict(X_pred_seq):
 
 
 # y_valid = predict(X_train_seq)
-y_valid = scaler_voltage.inverse_transform(predict(X_train_seq))
-y_pred_1000_rescaled = scaler_voltage.inverse_transform(predict(X_pred_seq))
+print(X_train_seq.shape)
+y_valid_ = np.squeeze(predict(X_train_seq), axis=1)
+print(y_valid_.shape)
+y_valid_ = y_valid_.reshape(-1, 1)
+print(y_valid_.shape)
+y_valid = scaler_voltage.inverse_transform(y_valid_)
+
+
+y_pred_1000_rescaled_ = np.squeeze(predict(X_pred_seq), axis=1)
+y_pred_1000_rescaled_ = y_pred_1000_rescaled_.reshape(-1, 1)
+print(y_pred_1000_rescaled_.shape)
+y_pred_1000_rescaled  = scaler_voltage.inverse_transform(y_pred_1000_rescaled_)
 
 # model.eval()
 # with torch.no_grad():

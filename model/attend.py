@@ -127,7 +127,8 @@ class Attend(nn.Module):
         if self.flash:
             return self.flash_attn(q, k, v, mask = mask)
 
-        sim = einsum(f'b h i d, b h j d -> b h i j', q, k) * scale
+        # sim = einsum(f'b h i d, b h j d -> b h i j', q, k) * scale
+        sim = einsum(f'b h n i, b h n j -> b h i j', q, k) * scale
 
         i, j, dtype = *sim.shape[-2:], sim.dtype
 
@@ -141,6 +142,7 @@ class Attend(nn.Module):
 
         attn = self.attn_dropout(attn)
 
-        out = einsum(f'b h i j, b h j d -> b h i d', attn, v)
+        # out = einsum(f'b h i j, b h j d -> b h i d', attn, v)
+        out = einsum(f'b h i j , b h n j -> b h n i', attn, v)
 
         return out
