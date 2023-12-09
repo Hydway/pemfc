@@ -39,14 +39,15 @@ seed_everything(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
-window_size = 200
-BATCH_SIZE  = 256
+window_size = 500
+BATCH_SIZE  = 512
+depth_num = 4
 head = 8
-d_attn = window_size * head
-Drop = 0.
-num_epochs  = 1
+d_attn = window_size
+Drop = 0.2
+num_epochs  = 10
 lr = 1e-4
-pred_step = window_size//10  # 可以根据自己的需求调整
+pred_step = window_size//1  # 可以根据自己的需求调整
 
 # 读取train / pred原始数据
 train_data = pd.read_csv('./data/FC2_Ageing_part1.csv', encoding='unicode_escape')
@@ -97,7 +98,6 @@ for i in range(window_size, len(train_quasi_features) - pred_step):
 for i in range(window_size, len(pred_quasi_features) - pred_step):
     X_pred_seq.append(pred_quasi_features[i - window_size:i, :])
     y_pred_seq.append(pred_quasi_vol[i:i + pred_step])
-
     y_pred_ori_seq.append(pred_quasi_vol[i])
 
 X_train_seq = np.array(X_train_seq)
@@ -133,7 +133,7 @@ model = iTransformer(
     num_variates=X_train_tensor.shape[-1],
     lookback_len=window_size,
     dim=d_attn,
-    depth=6,
+    depth=depth_num,
     heads=head,
     dim_head=d_attn,
     pred_length=(pred_step,),
@@ -142,6 +142,8 @@ model = iTransformer(
     flash_attn = False,
     attn_dropout = Drop,
 ).to(device)
+
+print(model)
 
 criterion = nn.MSELoss()
 optimizer = optim.AdamW(model.parameters(), lr=lr)
