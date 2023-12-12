@@ -100,10 +100,14 @@ for i in range(window_size, len(pred_quasi_features) - pred_step):
     y_pred_seq.append(pred_quasi_vol[i:i + pred_step])
     y_pred_ori_seq.append(pred_quasi_vol[i])
 
+print(len(X_train_seq))
 X_train_seq = np.array(X_train_seq)
 y_train_seq = np.array(y_train_seq)
 print(y_train_seq.shape)
 
+print(len(X_pred_seq))
+print(len(y_pred_seq))
+print(len(y_pred_ori_seq))
 X_pred_seq = np.array(X_pred_seq)
 y_pred_seq = np.array(y_pred_seq)
 
@@ -203,6 +207,7 @@ def predict(X_pred_seq, pred_step):
 
     model.eval()
     y_pred = []
+    i_list = []
 
     with torch.no_grad():
         for i, batch in enumerate(data_loader):
@@ -218,31 +223,32 @@ def predict(X_pred_seq, pred_step):
             batch_pred = preds[pred_step][..., -1]  # Fetch the output for the prediction length 1
 
             # 将预测结果移到 CPU 上，并转化为 numpy 数组
+            i_list.append(i)
             y_pred.append(batch_pred.cpu().numpy())
 
     # 将所有批次的预测结果汇总
     y_pred = np.concatenate(y_pred)
 
-    return y_pred
-
+    return y_pred, i_list
 
 
 # y_valid = predict(X_train_seq)
-print(X_train_seq.shape)
-y_valid_ = predict(X_train_seq, pred_step)
-print(y_valid_.shape)
+print("X_train_seq.shape:", X_train_seq.shape)
+y_valid_, _ = predict(X_train_seq, pred_step)
+print("y_valid_.shape:", y_valid_.shape)
 y_valid_ = y_valid_.reshape(-1, 1)
-print(y_valid_.shape)
 y_valid = scaler_voltage.inverse_transform(y_valid_)
+print("y_valid.shape:", y_valid.shape)
 
 
-y_pred_1000_rescaled_ = predict(X_pred_seq, pred_step)
-y_pred_1000_rescaled_ = y_pred_1000_rescaled_.reshape(-1, 1)
-print(y_pred_1000_rescaled_.shape)
+y_pred_1000_rescaled_, i_list = predict(X_pred_seq, pred_step)
+y_pred_1000_rescaled_ = y_pred_1000_rescaled_.reshape(-1, 1)[:len(X_pred_seq)]
+print("X_pred_seq.shape:", X_pred_seq.shape)
+print("len i_list", len(i_list))
 y_pred_1000_rescaled  = scaler_voltage.inverse_transform(y_pred_1000_rescaled_)
 
-print(y_valid_.shape)
-print(y_pred_1000_rescaled_.shape)
+print("y_pred_1000_rescaled_.shape:", y_pred_1000_rescaled_.shape)
+print("y_pred_1000_rescaled.shape:", y_pred_1000_rescaled.shape)
 
 
 # 绘制真实的和预测的 U_{tot} 值
